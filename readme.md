@@ -1,4 +1,4 @@
-## Litterae
+## Flourish
 A mail light weight mail server with simple configuration. Includes imap and smtp server.
 
 ### Development

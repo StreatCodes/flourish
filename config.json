@@ -1,0 +1,5 @@
+{
+    "MailDir": "domains",
+    "TLSCertFile": "cert.pem",
+    "TLSKeyFile": "key.pem"
+}
