@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
+	"net/mail"
 	"os"
 	"path"
 	"sync"
@@ -31,8 +33,8 @@ func LoadDomains(mailDir string) *Domains {
 
 				//Decode flourish domain data
 				var domain Domain
-				dec := gob.NewDecoder(file)
-				dec.Decode(&domain)
+				dec := json.NewDecoder(file)
+				err := dec.Decode(&domain)
 				if err != nil {
 					log.Fatalf("Error reading flourish.data for %s: %e\n", f.Name(), err)
 				}
@@ -69,7 +71,66 @@ func (d *Domains) del(domainName string) {
 	delete(d.domains, domainName)
 }
 
+//Domain contains information about it's users
 type Domain struct {
 	Name  string
 	Users []User
+}
+
+//ListDomains is the HTTP Handler to list multiple Domains
+func ListDomains(w http.ResponseWriter, r *http.Request) {
+	//Load domains
+	files, err := ioutil.ReadDir(config.MailDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var domains []string
+
+	for _, f := range files {
+		if f.IsDir() {
+			domains = append(domains, f.Name())
+		}
+	}
+
+	enc := json.NewEncoder(w)
+	err = enc.Encode(domains)
+	if err != nil {
+		log.Fatalf("Couldn't encode JSON response %e", err)
+	}
+}
+
+//CreateDomain is the HTTP handler to create a Domain
+func CreateDomain(w http.ResponseWriter, r *http.Request) {
+	type DomainBody struct {
+		Name string
+	}
+
+	var domain DomainBody
+	dec := json.NewDecoder(r.Body)
+	err := dec.Decode(&domain)
+	if err != nil {
+		//TODO probably want to put erros in context and handle with middleware
+		log.Fatalf("Received invalid JSON: %e\n", err)
+	}
+
+	//TODO validate domain name?
+	_, err = mail.ParseAddress("john.doe@" + domain.Name)
+	if err != nil {
+		//TODO
+		log.Fatalf("Invalid domain: %e", err)
+	}
+
+	//Create domain directory
+	dPath := path.Join(config.MailDir, domain.Name)
+	err = os.Mkdir(dPath, 644)
+	if err == os.ErrExist {
+		//TODO handle error correctly
+		log.Fatalf("Domain already exists")
+	} else if err != nil {
+		//TODO handle error correctly
+		log.Fatalf("Unexpected error when creating domain: %e", err)
+	}
+
+	w.WriteHeader(200)
 }
