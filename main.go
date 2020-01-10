@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -57,6 +58,14 @@ func initSMTP(addr string, port int, tlsConfig *tls.Config) {
 }
 
 func main() {
+	setup := flag.Bool("setup", false, "run the intial setup helper")
+	flag.Parse()
+
+	if *setup {
+		Setup()
+		return
+	}
+
 	//Load config
 	f, err := os.Open("./config.json")
 	if err != nil {

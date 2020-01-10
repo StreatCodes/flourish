@@ -1,3 +1,4 @@
 flourish
 *.pem
 domains/
+admin.json
