@@ -38,8 +38,8 @@ func (a *AdminSessions) Get(token []byte) (AdminSession, bool) {
 	return AdminSession{}, false
 }
 
-//Creates a session with a cryptographically random token
-func newAdminSession(username string) AdminSession {
+//Create adds a session to the active list and returns it
+func (a *AdminSessions) Create(username string) AdminSession {
 	session := AdminSession{
 		Username: username,
 		Token:    make([]byte, 256),
@@ -53,6 +53,8 @@ func newAdminSession(username string) AdminSession {
 		log.Fatalf("Error generating full length session token\n")
 	}
 
+	//TODO thread unsafe???
+	a.sessions = append(a.sessions, session)
 	return session
 }
 
@@ -142,7 +144,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//Create session on success
-	session := newAdminSession(loginRequest.Username)
+	session := sessions.Create(loginRequest.Username)
 	enc := json.NewEncoder(w)
 	err = enc.Encode(session)
 	if err != nil {
