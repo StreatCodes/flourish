@@ -36,7 +36,7 @@ func LoadDomains(mailDir string) *Domains {
 				dec := json.NewDecoder(file)
 				err := dec.Decode(&domain)
 				if err != nil {
-					log.Fatalf("Error reading flourish.data for %s: %e\n", f.Name(), err)
+					log.Fatalf("Error reading flourish.data for %s: %s\n", f.Name(), err)
 				}
 				domain.Name = f.Name()
 				domains.add(f.Name(), domain)
@@ -82,7 +82,9 @@ func ListDomains(w http.ResponseWriter, r *http.Request) {
 	//Load domains
 	files, err := ioutil.ReadDir(config.MailDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error reading domain directory structure %s\n", err)
+		http.Error(w, "Error reading domain directory structure", http.StatusInternalServerError)
+		return
 	}
 
 	var domains []string
@@ -96,7 +98,9 @@ func ListDomains(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	err = enc.Encode(domains)
 	if err != nil {
-		log.Fatalf("Couldn't encode JSON response %e", err)
+		log.Printf("Error encoding JSON response %s\n", err)
+		http.Error(w, "Error encoding JSON response", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -110,26 +114,29 @@ func CreateDomain(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	err := dec.Decode(&domain)
 	if err != nil {
-		//TODO probably want to put erros in context and handle with middleware
-		log.Fatalf("Received invalid JSON: %e\n", err)
+		http.Error(w, "Invalid JSON in request body", http.StatusBadRequest)
+		return
 	}
 
-	//TODO validate domain name?
+	//Validate domain
 	_, err = mail.ParseAddress("john.doe@" + domain.Name)
 	if err != nil {
-		//TODO
-		log.Fatalf("Invalid domain: %e", err)
+		log.Printf("Invalid domain: %s\n", err)
+		http.Error(w, "Invalid domain", http.StatusBadRequest)
+		return
 	}
 
 	//Create domain directory
 	dPath := path.Join(config.MailDir, domain.Name)
 	err = os.Mkdir(dPath, 644)
 	if err == os.ErrExist {
-		//TODO handle error correctly
-		log.Fatalf("Domain already exists")
+		log.Printf("Domain already exists\n")
+		http.Error(w, "Domain already exists", http.StatusBadRequest)
+		return
 	} else if err != nil {
-		//TODO handle error correctly
-		log.Fatalf("Unexpected error when creating domain: %e", err)
+		log.Printf("Unexpected error when creating domain: %s\n", err)
+		http.Error(w, "Unexpected error when creating domain", http.StatusInternalServerError)
+		return
 	}
 
 	w.WriteHeader(200)

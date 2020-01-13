@@ -76,16 +76,20 @@ func Authorized(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("API-Token")
 		if token == "" {
-			//TODO error correctly
-			//TODO set proper HTTP status code
-			log.Fatalf("Unauthorized")
+			log.Printf("API Key required\n")
+			http.Error(w, "API Key required", http.StatusUnauthorized)
+			return
+		}
+
+		session, ok := sessions.Get([]byte(token))
+		if ok {
+			//TODO apply session to context?
+			fmt.Printf("sessions %v\n", session)
+			next.ServeHTTP(w, r)
 		} else {
-			session, ok := sessions.Get([]byte(token))
-			if ok {
-				//TODO apply session to context?
-				fmt.Printf("sessions %v\n", session)
-				next.ServeHTTP(w, r)
-			}
+			log.Printf("Invalid API key: %s\n", string(session.Token))
+			http.Error(w, "Invalid API key", http.StatusUnauthorized)
+			return
 		}
 	}
 	return http.HandlerFunc(fn)
@@ -103,8 +107,9 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	err := dec.Decode(&loginRequest)
 
 	if err != nil {
-		//TODO
-		log.Fatalf("Error deocidng login request %s\n", err)
+		log.Printf("Error decoding login request %s\n", err)
+		http.Error(w, "Error decoding json login request", http.StatusBadRequest)
+		return
 	}
 
 	//Read admin information from a file
@@ -112,22 +117,28 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	f, err := os.Open("admin.json")
 
 	if err != nil {
-		log.Fatalf("Error reading admin.json %s\n", err)
+		log.Printf("Error reading admin.json %s\n", err)
+		http.Error(w, "Error reading admin users", http.StatusInternalServerError)
+		return
 	}
 	adminDec := json.NewDecoder(f)
 	adminDec.Decode(&adminUser)
 
 	//Compare username and password to hash
 	if adminUser.Username != loginRequest.Username {
-		log.Fatalf("Unknown admin user\n")
+		log.Printf("Unknown admin user: %s\n", loginRequest.Username)
+		http.Error(w, "Unknown user", http.StatusUnauthorized)
+		return
 	}
 
 	err = bcrypt.CompareHashAndPassword(adminUser.Password, []byte(loginRequest.Password))
 	if err == bcrypt.ErrMismatchedHashAndPassword {
-		//TODO
-		log.Fatalf("Password missmatch\n")
+		http.Error(w, "Password doesn't match.", http.StatusUnauthorized)
+		return
 	} else if err != nil {
-		log.Fatalf("Error comaparing password hash %s\n", err)
+		log.Printf("Error comparing password hash %s\n", err)
+		http.Error(w, "Unexpected bcrypt error", http.StatusInternalServerError)
+		return
 	}
 
 	//Create session on success
@@ -135,6 +146,8 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	err = enc.Encode(session)
 	if err != nil {
-		log.Fatalf("Error encoding json response %s\n", err)
+		log.Printf("Error encoding json response %s\n", err)
+		http.Error(w, "Unexpected json encoding error", http.StatusInternalServerError)
+		return
 	}
 }
