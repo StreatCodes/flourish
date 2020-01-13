@@ -58,6 +58,7 @@ func (a *AdminSessions) Create(username string) AdminSession {
 	return session
 }
 
+//Initialize the HTTP server
 func initHTTP(addr string, port int, certFile string, keyFile string) {
 	sessions = AdminSessions{}
 	r := chi.NewRouter()
@@ -65,8 +66,12 @@ func initHTTP(addr string, port int, certFile string, keyFile string) {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("welcome"))
+		w.Write([]byte("Flourish"))
 	})
+	r.Post("/login", LoginHandler)
+
+	r.With(Authorized).Post("/domain", CreateDomain)
+	r.With(Authorized).Post("/domain", ListDomains)
 
 	listenAddr := fmt.Sprintf("%s:%d", addr, port)
 	log.Printf("Starting HTTPS server at %s", listenAddr)
