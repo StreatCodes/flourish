@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -71,7 +72,7 @@ func initHTTP(addr string, port int, certFile string, keyFile string) {
 	r.Post("/login", LoginHandler)
 
 	r.With(Authorized).Post("/domain", CreateDomain)
-	r.With(Authorized).Post("/domain", ListDomains)
+	r.With(Authorized).Get("/domain", ListDomains)
 
 	listenAddr := fmt.Sprintf("%s:%d", addr, port)
 	log.Printf("Starting HTTPS server at %s", listenAddr)
@@ -88,7 +89,14 @@ func Authorized(next http.Handler) http.Handler {
 			return
 		}
 
-		session, ok := sessions.Get([]byte(token))
+		decodedToken, err := base64.StdEncoding.DecodeString(token)
+		if err != nil {
+			log.Printf("Error base64 deocding API-Key Header\n")
+			http.Error(w, "Error base64 deocding API-Key Header", http.StatusBadRequest)
+			return
+		}
+
+		session, ok := sessions.Get(decodedToken)
 		if ok {
 			//TODO apply session to context?
 			fmt.Printf("sessions %v\n", session)
