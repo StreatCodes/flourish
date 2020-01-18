@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"path"
 	"sync"
+
+	"github.com/go-chi/chi"
 )
 
 //LoadDomains builds a Domains struct from the mailDir directory
@@ -129,7 +132,7 @@ func CreateDomain(w http.ResponseWriter, r *http.Request) {
 	//Create domain directory
 	dPath := path.Join(config.MailDir, domain.Name)
 	err = os.Mkdir(dPath, 644)
-	if err == os.ErrExist {
+	if errors.Is(err, os.ErrExist) {
 		log.Printf("Domain already exists\n")
 		http.Error(w, "Domain already exists", http.StatusBadRequest)
 		return
@@ -139,5 +142,31 @@ func CreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusCreated)
+}
+
+//DeleteDomain is the HTTP handler to delete a Domain
+func DeleteDomain(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+
+	//Delete domain and all sub-directories
+	dPath := path.Join(config.MailDir, domain)
+
+	//Check domain exists
+	_, err := os.Stat(dPath)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Printf("Domain does not exist\n")
+		http.Error(w, "Domain does not exist", http.StatusBadRequest)
+		return
+	}
+
+	//Delete domain
+	err = os.RemoveAll(dPath)
+	if err != nil {
+		log.Printf("Unexpected error when deleting domain: %s\n", err)
+		http.Error(w, "Unexpected error when deleting domain", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

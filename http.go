@@ -73,6 +73,7 @@ func initHTTP(addr string, port int, certFile string, keyFile string) {
 
 	r.With(Authorized).Post("/domain", CreateDomain)
 	r.With(Authorized).Get("/domain", ListDomains)
+	r.With(Authorized).Delete("/domain/{domain}", DeleteDomain)
 
 	listenAddr := fmt.Sprintf("%s:%d", addr, port)
 	log.Printf("Starting HTTPS server at %s", listenAddr)
@@ -99,7 +100,6 @@ func Authorized(next http.Handler) http.Handler {
 		session, ok := sessions.Get(decodedToken)
 		if ok {
 			//TODO apply session to context?
-			fmt.Printf("sessions %v\n", session)
 			next.ServeHTTP(w, r)
 		} else {
 			log.Printf("Invalid API key: %s\n", string(session.Token))
