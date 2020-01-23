@@ -75,6 +75,10 @@ func initHTTP(addr string, port int, certFile string, keyFile string) {
 	r.With(Authorized).Get("/domain", ListDomains)
 	r.With(Authorized).Delete("/domain/{domain}", DeleteDomain)
 
+	r.With(Authorized).Post("/domain/{domain}/user", CreateUser)
+	r.With(Authorized).Get("/domain/{domain}/user", ListUsers)
+	r.With(Authorized).Delete("/domain/{domain}/user/{user}", DeleteUser)
+
 	listenAddr := fmt.Sprintf("%s:%d", addr, port)
 	log.Printf("Starting HTTPS server at %s", listenAddr)
 	http.ListenAndServeTLS(listenAddr, certFile, keyFile, r)
@@ -119,8 +123,9 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	var loginRequest LoginRequestUser
 	dec := json.NewDecoder(r.Body)
-	err := dec.Decode(&loginRequest)
+	defer r.Body.Close()
 
+	err := dec.Decode(&loginRequest)
 	if err != nil {
 		log.Printf("Error decoding login request %s\n", err)
 		http.Error(w, "Error decoding json login request", http.StatusBadRequest)

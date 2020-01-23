@@ -3,103 +3,180 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/mail"
 	"os"
 	"path"
-	"sync"
 
 	"github.com/go-chi/chi"
+	"golang.org/x/crypto/bcrypt"
 )
 
-//LoadDomains builds a Domains struct from the mailDir directory
-func LoadDomains(mailDir string) *Domains {
-	//Load domains
-	files, err := ioutil.ReadDir(mailDir)
+//Domain contains information about it's users
+type Domain struct {
+	Name string
+}
+
+//Users gets all users associated with a domain
+func (d *Domain) Users() []User {
+	dPath := path.Join(config.MailDir, d.Name)
+	//Load users
+	files, err := ioutil.ReadDir(dPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err) //TODO
 	}
 
-	//Look for all domains and register them
-	domains := Domains{
-		domains: make(map[string]Domain),
-	}
+	//Look for all users
+	var users []User
 
 	for _, f := range files {
 		if f.IsDir() {
-			dbPath := path.Join(config.MailDir, f.Name(), "flourish.data")
+			dbPath := path.Join(dPath, f.Name(), "flourish-user.json")
 			if file, err := os.Open(dbPath); err == nil {
-				fmt.Printf("Found domain %s\n", f.Name())
-
-				//Decode flourish domain data
-				var domain Domain
+				//Decode flourish user data
+				var user User
 				dec := json.NewDecoder(file)
-				err := dec.Decode(&domain)
+				err := dec.Decode(&user)
 				if err != nil {
-					log.Fatalf("Error reading flourish.data for %s: %s\n", f.Name(), err)
+					log.Fatalf("Error reading flourish-user.json for %s@%s: %s\n", f.Name(), d.Name, err)
 				}
-				domain.Name = f.Name()
-				domains.add(f.Name(), domain)
+				user.Username = f.Name()
+				user.Password = nil
+
+				users = append(users, user)
 			}
 		}
 	}
 
-	return &domains
+	return users
 }
 
-//Domains contains all the available domains for the Mail Server
-type Domains struct {
-	mutex   sync.Mutex
-	domains map[string]Domain
+//CreateUser gets all users associated with a domain
+func (d *Domain) CreateUser(username string, password string) (User, error) {
+	//Validate user + domain
+	_, err := mail.ParseAddress(username + "@" + d.Name)
+	if err != nil {
+		log.Printf("Invalid domain: %s\n", err)
+		return User{}, errors.New("Invalid username")
+	}
+
+	//Create user directory
+	uPath := path.Join(config.MailDir, d.Name, username)
+	err = os.Mkdir(uPath, 0700)
+	if errors.Is(err, os.ErrExist) {
+		return User{}, errors.New("User already exists")
+	} else if err != nil {
+		return User{}, errors.New("Unexpected error creating user: " + err.Error())
+	}
+
+	encryptedPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return User{}, errors.New("Error generating new user's password hash: " + err.Error())
+	}
+
+	user := User{
+		Username: username,
+		Password: encryptedPass,
+		Alias:    make([]string, 0),
+	}
+
+	flourishDataPath := path.Join(uPath, "flourish-user.json")
+	f, err := os.OpenFile(flourishDataPath, os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		return User{}, errors.New("Error creating user data file: " + err.Error())
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	err = enc.Encode(user)
+	if err != nil {
+		return User{}, errors.New("Error writing user data: " + err.Error())
+	}
+
+	return user, nil
 }
 
-func (d *Domains) get(domainName string) Domain {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	return d.domains[domainName]
+//DeleteUser deletes the user with the given name that's associated with the domain
+func (d *Domain) DeleteUser(username string) error {
+	uPath := path.Join(config.MailDir, d.Name, username)
+
+	//Delete domain
+	err := os.RemoveAll(uPath)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (d *Domains) add(domainName string, domain Domain) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	d.domains[domainName] = domain
+//AllDomains searchs the MailDir directory for domains
+func AllDomains() []Domain {
+	//Load domains
+	files, err := ioutil.ReadDir(config.MailDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//Look for all domains
+	var domains []Domain
+
+	for _, f := range files {
+		if f.IsDir() {
+			domains = append(domains, Domain{Name: f.Name()})
+		}
+	}
+
+	return domains
 }
 
-func (d *Domains) del(domainName string) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	delete(d.domains, domainName)
+//DeleteDomainByName deletes the domain, users and all user data
+func DeleteDomainByName(name string) error {
+	domain, err := DomainByName(name)
+	if err != nil {
+		return err
+	}
+
+	for _, user := range domain.Users() {
+		err = domain.DeleteUser(user.Username)
+		if err != nil {
+			return errors.New("Failed to delete user " + user.Username + " " + err.Error())
+		}
+	}
+
+	uPath := path.Join(config.MailDir, name)
+
+	//Delete domain
+	err = os.RemoveAll(uPath)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-//Domain contains information about it's users
-type Domain struct {
-	Name  string
-	Users []User
+//DomainByName returns the domain associated with the given name
+func DomainByName(name string) (Domain, error) {
+	dPath := path.Join(config.MailDir, name)
+	f, err := os.Stat(dPath)
+	if err != nil {
+		return Domain{}, err
+	}
+
+	if !f.IsDir() {
+		return Domain{}, errors.New("Domain not found")
+	}
+
+	return Domain{Name: f.Name()}, nil
 }
 
 //ListDomains is the HTTP Handler to list multiple Domains
 func ListDomains(w http.ResponseWriter, r *http.Request) {
-	//Load domains
-	files, err := ioutil.ReadDir(config.MailDir)
-	if err != nil {
-		log.Printf("Error reading domain directory structure %s\n", err)
-		http.Error(w, "Error reading domain directory structure", http.StatusInternalServerError)
-		return
-	}
-
-	var domains []string
-
-	for _, f := range files {
-		if f.IsDir() {
-			domains = append(domains, f.Name())
-		}
-	}
+	domains := AllDomains()
 
 	enc := json.NewEncoder(w)
-	err = enc.Encode(domains)
+	err := enc.Encode(domains)
 	if err != nil {
 		log.Printf("Error encoding JSON response %s\n", err)
 		http.Error(w, "Error encoding JSON response", http.StatusInternalServerError)
@@ -115,6 +192,8 @@ func CreateDomain(w http.ResponseWriter, r *http.Request) {
 
 	var domain DomainBody
 	dec := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
 	err := dec.Decode(&domain)
 	if err != nil {
 		http.Error(w, "Invalid JSON in request body", http.StatusBadRequest)
@@ -131,7 +210,7 @@ func CreateDomain(w http.ResponseWriter, r *http.Request) {
 
 	//Create domain directory
 	dPath := path.Join(config.MailDir, domain.Name)
-	err = os.Mkdir(dPath, 644)
+	err = os.Mkdir(dPath, 0700)
 	if errors.Is(err, os.ErrExist) {
 		log.Printf("Domain already exists\n")
 		http.Error(w, "Domain already exists", http.StatusBadRequest)
@@ -147,24 +226,16 @@ func CreateDomain(w http.ResponseWriter, r *http.Request) {
 
 //DeleteDomain is the HTTP handler to delete a Domain
 func DeleteDomain(w http.ResponseWriter, r *http.Request) {
-	domain := chi.URLParam(r, "domain")
-
-	//Delete domain and all sub-directories
-	dPath := path.Join(config.MailDir, domain)
-
-	//Check domain exists
-	_, err := os.Stat(dPath)
-	if errors.Is(err, os.ErrNotExist) {
-		log.Printf("Domain does not exist\n")
-		http.Error(w, "Domain does not exist", http.StatusBadRequest)
-		return
-	}
+	domainName := chi.URLParam(r, "domain")
 
 	//Delete domain
-	err = os.RemoveAll(dPath)
+	err := DeleteDomainByName(domainName)
 	if err != nil {
-		log.Printf("Unexpected error when deleting domain: %s\n", err)
-		http.Error(w, "Unexpected error when deleting domain", http.StatusInternalServerError)
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "Domain does not exist", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

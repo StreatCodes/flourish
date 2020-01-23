@@ -79,4 +79,40 @@ export default class API {
 			throw new Error(responseBody.trim());
 		}
 	}
+
+	listUsers  = async function(domain, offset = 0, limit = 200) {
+		let res = await fetch(`${this.baseUrl}/domain/${domain}/user?offset=${offset}&limit=${limit}`, {
+			headers: {
+				'API-Token': this.session.Token
+			}
+		});
+
+		if(res.status !== 200) {
+			const responseBody = await res.text();
+			throw new Error(responseBody.trim());
+		}
+		
+		const domains = await res.json();
+		return domains;
+	}
+
+	createUser = async function(domainName, username, password) {
+		const data = {
+			Username: username,
+			Password: password
+		}
+
+		let res = await fetch(`${this.baseUrl}/domain/${domainName}/user`, {
+			method: 'post',
+			headers: {
+				'API-Token': this.session.Token
+			},
+			body: JSON.stringify(data)
+		});
+
+		if(res.status !== 201) {
+			const responseBody = await res.text();
+			throw new Error(responseBody.trim());
+		}
+	}
 }

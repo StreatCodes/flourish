@@ -74,7 +74,13 @@ func main() {
 	dec := json.NewDecoder(f)
 	dec.Decode(&config)
 
-	_ = LoadDomains(config.MailDir)
+	domains := AllDomains()
+	for _, domain := range domains {
+		for _, user := range domain.Users() {
+			fmt.Printf("Found user: %s\n", user.Username)
+		}
+		fmt.Println()
+	}
 
 	//Load tls certs
 	cert, err := tls.LoadX509KeyPair(config.TLSCertFile, config.TLSKeyFile)
